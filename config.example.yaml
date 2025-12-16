@@ -1,0 +1,32 @@
+# bezoekersparkeren configuration
+# Copy to config.yaml and fill in your values
+
+# Municipality - determines the URL subdomain
+municipality: almere
+
+# Credentials - use environment variables!
+credentials:
+  email: ${PARKEER_EMAIL}
+  password: ${PARKEER_PASSWORD}
+
+# Browser settings
+browser:
+  headless: true
+  slow_mo: 100  # milliseconds between actions
+  timeout: 30000  # page load timeout in ms
+
+# Default parking settings
+defaults:
+  duration_hours: 3
+  
+# Logging
+logging:
+  level: INFO
+  file: null  # or path to log file
+
+# Favorite license plates (optional)
+favorites:
+  - plate: "AB-123-CD"
+    name: "Partner"
+  - plate: "EF-456-GH"
+    name: "Ouders"

@@ -1,0 +1,38 @@
+# Credentials and secrets
+.env
+*.env
+config.yaml
+config.yml
+secrets/
+
+# Sessions
+sessions.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+venv/
+.venv/
+ENV/
+
+# Playwright
+playwright-report/
+test-results/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs and Artifacts
+*.log
+*.png
+*.jpg
+ui_dump.html
+debug_ui.py
