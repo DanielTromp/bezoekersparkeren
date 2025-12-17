@@ -24,6 +24,11 @@ logging:
   level: INFO
   file: null  # or path to log file
 
+# Telegram Bot settings
+telegram:
+  bot_token: ${PARKEER_TELEGRAM_BOT_TOKEN}
+  allowed_users: ${PARKEER_TELEGRAM_ALLOWED_USERS}  # Comma-separated user IDs
+
 # Favorite license plates (optional)
 favorites:
   - plate: "AB-123-CD"

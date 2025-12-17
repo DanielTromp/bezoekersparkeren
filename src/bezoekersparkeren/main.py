@@ -250,5 +250,12 @@ def balance(ctx):
 
     asyncio.run(_balance())
 
+@cli.command()
+def bot():
+    """Start de Telegram bot."""
+    from bezoekersparkeren.bot.telegram_bot import main as bot_main
+    bot_main()
+
 if __name__ == '__main__':
     cli()
+

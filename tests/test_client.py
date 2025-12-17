@@ -35,3 +35,28 @@ async def test_login(mock_page, config):
     assert success is True
     mock_page.goto.assert_called_with(f"https://bezoek.parkeer.nl/{config.municipality}/login")
     mock_page.fill.assert_any_call('input#username', config.credentials.email)
+
+@pytest.mark.asyncio
+async def test_ensure_dashboard_navigation(mock_page, config):
+    client = ParkeerClient(config)
+    client.page = mock_page
+    # Mock browser init
+    client.browser = AsyncMock()
+    client._playwright = AsyncMock()
+    
+    # Mock content to return valid HTML string
+    mock_page.content = AsyncMock(return_value="<html></html>")
+    
+    # Check 1: Should navigate if on subpage
+    mock_page.url = "https://bezoek.parkeer.nl/almere/app/park/new"
+    await client.get_active_sessions()
+    
+    mock_page.goto.assert_called_with("https://bezoek.parkeer.nl/almere/app/park")
+    
+    # Check 2: Should NOT navigate if on dashboard
+    mock_page.goto.reset_mock()
+    mock_page.url = "https://bezoek.parkeer.nl/almere/app/park"
+    
+    await client.get_active_sessions()
+    
+    mock_page.goto.assert_not_called()

@@ -125,14 +125,34 @@ class ParkeerClient:
             await self.page.goto(target_url)
             await self.page.wait_for_load_state('networkidle')
             
-            # Click the "Nieuw kenteken" button to open the form/modal
-            # User reported seeing a green button with text "NIEUW KENTEKEN"
-            logger.info("Clicking 'NIEUW KENTEKEN' button...")
+            # Check if input is already visible
+            logger.info("Checking if registration form is already open...")
+            is_form_open = False
             try:
-                # Try specific class first (from user), then text
-                await self.page.click('button.add-license-plate, button:has-text("Nieuw kenteken"), button:has-text("NIEUW KENTEKEN")', timeout=5000)
+                # Short timeout to check visibility
+                await self.page.wait_for_selector('input[name="number"]', timeout=2000, state='visible')
+                is_form_open = True
+                logger.info("Registration form is already open.")
             except Exception:
-                logger.warning("Could not click 'Nieuw Kenteken' button, assuming form might be open...")
+                logger.info("Registration form not found, attempting to open...")
+
+            if not is_form_open:
+                # Click the "Nieuw kenteken" button to open the form/modal
+                # Use broader selectors to catch div/a buttons or exact text matches
+                logger.info("Clicking 'NIEUW KENTEKEN' button...")
+                try:
+                    # Generic broad selector for anything that looks like the button
+                    await self.page.click(
+                        'button.add-license-plate, '
+                        '[role="button"]:has-text("Nieuw kenteken"), '
+                        'button:has-text("Nieuw kenteken"), '
+                        'a:has-text("Nieuw kenteken"), '
+                        'a:has-text("NIEUW KENTEKEN"), '
+                        'button:has-text("NIEUW KENTEKEN")',
+                        timeout=5000
+                    )
+                except Exception as e:
+                    logger.warning(f"Warning clicking 'Nieuw Kenteken' button: {e}")
 
             # Enter license plate
             # Wait for input to be visible first
@@ -256,9 +276,8 @@ class ParkeerClient:
         logger.info(f"Stopping session for {session.plate} (ID: {session.id})")
         
         # Navigate to Active Sessions page if needed
-        if not self.page.url or "app" not in self.page.url:
-             await self.page.goto(f"https://bezoek.parkeer.nl/{self.config.municipality}/app/park")
-             await self.page.wait_for_load_state('networkidle')
+        # Navigate to Active Sessions page if needed
+        await self._ensure_dashboard()
         
         # Get all session containers
         elements = await self.page.query_selector_all('.park-item-desktop')
@@ -308,15 +327,37 @@ class ParkeerClient:
         logger.warning(f"Could not find session {session.id} in DOM to stop.")
         return False
 
+    async def _ensure_dashboard(self):
+        """Ensure we are on the dashboard/active sessions page"""
+        dashboard_url = f"https://bezoek.parkeer.nl/{self.config.municipality}/app/park"
+        current_url = self.page.url
+        
+        should_navigate = False
+        if not current_url:
+            should_navigate = True
+        elif "/app/park/new" in current_url:
+            should_navigate = True
+        elif "/app/user" in current_url:
+            should_navigate = True
+        elif "/app/history" in current_url:
+            should_navigate = True
+        elif dashboard_url not in current_url:
+            # If we are completely elsewhere (start page, login, etc)
+            should_navigate = True
+            
+        if should_navigate:
+            logger.info(f"Navigating to dashboard (Current: {current_url})")
+            await self.page.goto(dashboard_url)
+            await self.page.wait_for_load_state('networkidle')
+
     async def get_active_sessions(self) -> List[ParkingSession]:
         """Get list of active parking sessions"""
         logger.info("Fetching active sessions")
         
         # Ensure we are logged in and on a page with session info
         # If we are not on a page that likely has the info, go to the main app page
-        if not self.page.url or "app" not in self.page.url:
-             await self.page.goto(f"https://bezoek.parkeer.nl/{self.config.municipality}/app/park")
-             await self.page.wait_for_load_state('networkidle')
+        # Ensure we are logged in and on a page with session info
+        await self._ensure_dashboard()
 
         content = await self.page.content()
         return self._parse_sessions_from_html(content)

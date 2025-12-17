@@ -24,6 +24,18 @@ class LoggingConfig(BaseModel):
     level: str = "INFO"
     file: Optional[str] = None
 
+class TelegramConfig(BaseModel):
+    bot_token: str
+    allowed_users: str | List[int]  # Comma-separated string or list
+    
+    class Config:
+        # Sta zowel string als list toe
+        extra = "ignore"
+
+class NotificationConfig(BaseModel):
+    enabled: bool = True
+    session_expiry_warning: int = 30  # minuten
+
 
 
 
@@ -35,6 +47,7 @@ class Config(BaseSettings):
     browser: BrowserConfig = BrowserConfig()
     defaults: DefaultSettings = DefaultSettings()
     logging: LoggingConfig = LoggingConfig()
+    telegram: Optional[TelegramConfig] = None
     favorites: List[Favorite] = []
     zones: List[Zone] = []
     
