@@ -91,13 +91,17 @@ You can deploy this application as a Stack in Portainer.
 6.  **Environment variables:** Add the variables here (e.g., `PARKEER_EMAIL`, `PARKEER_PASSWORD`, `PARKEER_TELEGRAM_BOT_TOKEN`).
 
 **Important Note on Volumes:**
-The default `docker-compose.yml` expects `config.yaml` and `sessions.json` to be in the same directory. In Portainer, you likely need to modify the volume mappings to point to absolute paths on your server where these files reside, or use Docker volumes.
+Since `config.yaml` and `sessions.json` are gitignored (for security), they will **NOT** be present when Portainer clones the repository. You must:
 
-Example modification for Portainer (you can edit the Compose file in Portainer):
+1.  **Create these files manually** on your server (e.g., in `/opt/bezoekersparkeren/`).
+2.  **Update the volume mappings** in the Portainer stack editor to point to these absolute paths.
+
+Example Portainer Volume Configuration:
 ```yaml
 volumes:
-  - /path/to/host/config.yaml:/app/config.yaml
-  - /path/to/host/sessions.json:/app/sessions.json
+  - /opt/bezoekersparkeren/config.yaml:/app/config.yaml
+  - /opt/bezoekersparkeren/sessions.json:/app/sessions.json
+  - /opt/bezoekersparkeren/bezoekersparkeren.log:/app/bezoekersparkeren.log
 ```
 
 ## Usage
