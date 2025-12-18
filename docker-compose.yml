@@ -5,7 +5,10 @@ services:
       - ./config.yaml:/app/config.yaml
       - ./sessions.json:/app/sessions.json
       - ./bezoekersparkeren.log:/app/bezoekersparkeren.log
-    env_file:
-      - .env
+    environment:
+      - PARKEER_EMAIL
+      - PARKEER_PASSWORD
+      - PARKEER_TELEGRAM_BOT_TOKEN
+      - PARKEER_TELEGRAM_ALLOWED_USERS
     # Keep the container running if needed, or run one-off commands
     # command: tail -f /dev/null 

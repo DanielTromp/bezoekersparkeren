@@ -88,7 +88,7 @@ You can deploy this application as a Stack in Portainer.
 3.  **Name:** `bezoekersparkeren` (or your preferred name).
 4.  **Repository URL:** `https://github.com/danieltromp/bezoekersparkeren.git`
 5.  **Compose path:** `docker-compose.yml`
-6.  **Environment variables:** Add the variables from your `.env` file here (e.g., `PARKEER_EMAIL`, `PARKEER_PASSWORD`).
+6.  **Environment variables:** Add the variables here (e.g., `PARKEER_EMAIL`, `PARKEER_PASSWORD`, `PARKEER_TELEGRAM_BOT_TOKEN`).
 
 **Important Note on Volumes:**
 The default `docker-compose.yml` expects `config.yaml` and `sessions.json` to be in the same directory. In Portainer, you likely need to modify the volume mappings to point to absolute paths on your server where these files reside, or use Docker volumes.
