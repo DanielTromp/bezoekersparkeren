@@ -1,0 +1,11 @@
+services:
+  app:
+    build: .
+    volumes:
+      - ./config.yaml:/app/config.yaml
+      - ./sessions.json:/app/sessions.json
+      - ./bezoekersparkeren.log:/app/bezoekersparkeren.log
+    env_file:
+      - .env
+    # Keep the container running if needed, or run one-off commands
+    # command: tail -f /dev/null 

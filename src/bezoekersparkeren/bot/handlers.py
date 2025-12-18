@@ -1,6 +1,7 @@
 """Telegram bot command en callback handlers."""
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.error import BadRequest
 from telegram.ext import ContextTypes, ConversationHandler
 from bezoekersparkeren.client import ParkeerClient
 from bezoekersparkeren.config import Config
@@ -31,6 +32,17 @@ async def get_client() -> ParkeerClient:
         await _client._init_browser()
         await _client.login()
     return _client
+
+
+async def _safe_edit_message(query, text: str, **kwargs):
+    """Edit message text safely, picking up 'Message is not modified' errors."""
+    try:
+        await query.edit_message_text(text, **kwargs)
+    except BadRequest as e:
+        if "Message is not modified" in str(e):
+            logger.debug("Message not modified, suppressing error")
+        else:
+            raise e
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -83,7 +95,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton("⬅️ Terug", callback_data="menu_back")
         ])
         
-        await query.edit_message_text(
+        await _safe_edit_message(
+            query,
             "🚗 *Bezoek aanmelden*\n\n"
             "Kies een favoriet of voer een kenteken in:",
             reply_markup=InlineKeyboardMarkup(keyboard),
@@ -93,12 +106,13 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("register_") and data != "register_custom":
         # Direct registreren met favoriet kenteken
         plate = data.replace("register_", "")
-        await query.edit_message_text(f"⏳ Bezig met aanmelden van {plate}...")
+        await _safe_edit_message(query, f"⏳ Bezig met aanmelden van {plate}...")
         
         try:
             client = await get_client()
             session = await client.register_visitor(plate)
-            await query.edit_message_text(
+            await _safe_edit_message(
+                query,
                 f"✅ *Kenteken aangemeld!*\n\n"
                 f"🚗 `{plate}`\n"
                 f"⏰ Gestart om: {session.start_time.strftime('%H:%M') if session.start_time else 'nu'}\n\n"
@@ -107,10 +121,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         except Exception as e:
             logger.error(f"Error registering plate: {e}")
-            await query.edit_message_text(f"❌ Fout bij aanmelden: {str(e)}")
+            await _safe_edit_message(query, f"❌ Fout bij aanmelden: {str(e)}")
     
     elif data == "register_custom":
-        await query.edit_message_text(
+        await _safe_edit_message(
+            query,
             "✏️ *Kenteken invoeren*\n\n"
             "Stuur het kenteken als bericht (bijv. `AB-123-CD`):",
             parse_mode="Markdown"
@@ -124,7 +139,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             sessions = await client.get_active_sessions()
             
             if not sessions:
-                await query.edit_message_text(
+                await _safe_edit_message(
+                    query,
                     "ℹ️ Er zijn geen actieve parkeersessies.",
                     reply_markup=InlineKeyboardMarkup([[
                         InlineKeyboardButton("⬅️ Terug", callback_data="menu_back")
@@ -144,18 +160,19 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 InlineKeyboardButton("⬅️ Terug", callback_data="menu_back")
             ])
             
-            await query.edit_message_text(
+            await _safe_edit_message(
+                query,
                 "🛑 *Welke sessie stoppen?*",
                 reply_markup=InlineKeyboardMarkup(keyboard),
                 parse_mode="Markdown"
             )
         except Exception as e:
             logger.error(f"Error getting sessions: {e}")
-            await query.edit_message_text(f"❌ Fout: {str(e)}")
+            await _safe_edit_message(query, f"❌ Fout: {str(e)}")
     
     elif data.startswith("stop_"):
         plate = data.replace("stop_", "")
-        await query.edit_message_text(f"⏳ Bezig met afmelden van {plate}...")
+        await _safe_edit_message(query, f"⏳ Bezig met afmelden van {plate}...")
         
         try:
             client = await get_client()
@@ -164,12 +181,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             if session:
                 await client.stop_session(session)
-                await query.edit_message_text(f"✅ Sessie voor `{plate}` is gestopt!", parse_mode="Markdown")
+                await _safe_edit_message(query, f"✅ Sessie voor `{plate}` is gestopt!", parse_mode="Markdown")
             else:
-                await query.edit_message_text(f"❌ Geen actieve sessie gevonden voor `{plate}`.")
+                await _safe_edit_message(query, f"❌ Geen actieve sessie gevonden voor `{plate}`.")
         except Exception as e:
             logger.error(f"Error stopping session: {e}")
-            await query.edit_message_text(f"❌ Fout bij stoppen: {str(e)}")
+            await _safe_edit_message(query, f"❌ Fout bij stoppen: {str(e)}")
     
     elif data == "menu_list":
         try:
@@ -188,7 +205,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         text += f" (tot {s.end_time.strftime('%H:%M')})"
                     text += "\n"
             
-            await query.edit_message_text(
+            await _safe_edit_message(
+                query,
                 text,
                 reply_markup=InlineKeyboardMarkup([[
                     InlineKeyboardButton("⬅️ Terug", callback_data="menu_back")
@@ -196,13 +214,14 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode="Markdown"
             )
         except Exception as e:
-            await query.edit_message_text(f"❌ Fout: {str(e)}")
+            await _safe_edit_message(query, f"❌ Fout: {str(e)}")
     
     elif data == "menu_balance":
         try:
             client = await get_client()
             balance = await client.get_balance()
-            await query.edit_message_text(
+            await _safe_edit_message(
+                query,
                 f"💰 *Saldo*\n\n"
                 f"Beschikbaar: €{balance.amount:.2f}",
                 reply_markup=InlineKeyboardMarkup([[
@@ -211,7 +230,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode="Markdown"
             )
         except Exception as e:
-            await query.edit_message_text(f"❌ Fout: {str(e)}")
+            await _safe_edit_message(query, f"❌ Fout: {str(e)}")
     
     elif data == "menu_favorites":
         favorites = _config.favorites if _config and _config.favorites else []
@@ -223,7 +242,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             for fav in favorites:
                 text += f"• {fav.name}: `{fav.plate}`\n"
         
-        await query.edit_message_text(
+        await _safe_edit_message(
+            query,
             text,
             reply_markup=InlineKeyboardMarkup([[
                 InlineKeyboardButton("⬅️ Terug", callback_data="menu_back")
@@ -246,7 +266,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 InlineKeyboardButton("⭐ Favorieten", callback_data="menu_favorites"),
             ],
         ]
-        await query.edit_message_text(
+        await _safe_edit_message(
+            query,
             "🅿️ *Bezoekersparkeren Almere*\n\nWat wil je doen?",
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode="Markdown"

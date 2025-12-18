@@ -39,7 +39,69 @@ playwright install-deps chromium
    PARKEER_PASSWORD=your_password
    ```
 
+## Running with Docker
+
+You can run the application using Docker Compose without installing Python or dependencies locally.
+
+1. Make sure you have configured `config.yaml` and `.env` as described above.
+
+2. Build and run commands:
+
+   ```bash
+   # Show help
+   docker compose run --rm app --help
+
+   # List sessions
+   docker compose run --rm app list
+
+   # Register a visitor
+   docker compose run --rm app register --plate AB-123-CD --hours 4
+   ```
+
+Note: The `sessions.json` file is mounted, so session data persists between runs.
+
+### Running the Telegram Bot
+
+To run the Telegram bot as a background service (daemon):
+
+```bash
+docker compose run -d --name parkeerbot --restart unless-stopped app bot
+```
+
+- `-d`: Run in detached mode (background)
+- `--name parkeerbot`: Give the container a recognizable name
+- `--restart unless-stopped`: Automatically restart if it crashes or Docker restarts
+- `bot`: The command to start the bot
+
+To stop the bot:
+```bash
+docker stop parkeerbot
+docker rm parkeerbot
+```
+
+### Deploying with Portainer
+
+You can deploy this application as a Stack in Portainer.
+
+1.  **Go to Stacks** and click **"Add stack"**.
+2.  Select **"Repository"**.
+3.  **Name:** `bezoekersparkeren` (or your preferred name).
+4.  **Repository URL:** `https://github.com/danieltromp/bezoekersparkeren.git`
+5.  **Compose path:** `docker-compose.yml`
+6.  **Environment variables:** Add the variables from your `.env` file here (e.g., `PARKEER_EMAIL`, `PARKEER_PASSWORD`).
+
+**Important Note on Volumes:**
+The default `docker-compose.yml` expects `config.yaml` and `sessions.json` to be in the same directory. In Portainer, you likely need to modify the volume mappings to point to absolute paths on your server where these files reside, or use Docker volumes.
+
+Example modification for Portainer (you can edit the Compose file in Portainer):
+```yaml
+volumes:
+  - /path/to/host/config.yaml:/app/config.yaml
+  - /path/to/host/sessions.json:/app/sessions.json
+```
+
 ## Usage
+
 
 The tool uses a browser automation engine. By default it runs in headless mode. 
 Add `--visible` to any command to see the browser window (useful for debugging).
