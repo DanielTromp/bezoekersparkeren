@@ -1,55 +1,93 @@
 # Bezoekersparkeren
 
-Automate visitor parking registration on bezoek.parkeer.nl (Almere).
+Telegram bot for automated visitor parking registration on bezoek.parkeer.nl (Almere).
 
-## Disclaimer
+## Container Image
 
-This tool is for personal use only. Use at your own risk.
+```
+ghcr.io/danieltromp/bezoekersparkeren:latest
+```
+
+Multi-platform: `linux/amd64`, `linux/arm64`
 
 ## Configuration
 
+Create configuration files:
+
 ```bash
+# config.yaml - see config.example.yaml
 cp config.example.yaml config.yaml
-cp .env.example .env
-# Edit .env with your credentials
+
+# .env - credentials
+cat > .env << 'EOF'
+PARKEER_EMAIL=your@email.com
+PARKEER_PASSWORD=your_password
+PARKEER_TELEGRAM_BOT_TOKEN=your_bot_token
+PARKEER_TELEGRAM_ALLOWED_USERS=123456789
+PARKEER_OPENROUTER_API_KEY=optional_api_key
+EOF
 ```
 
-## Deployment Options
+## Deployment
 
-### Docker Compose
+### Docker Compose (recommended)
 
 ```bash
-# Run commands
-docker compose run --rm app list
-docker compose run --rm app register --plate AB-123-CD --hours 4
+# Start bot as daemon
+docker compose up -d
 
-# Run Telegram bot as daemon
-docker compose run -d --name parkeerbot --restart unless-stopped app bot
+# View logs
+docker compose logs -f
+
+# Stop
+docker compose down
 ```
 
-### Incus (OCI Container)
-
-Deploy using the provided scripts:
+### Docker
 
 ```bash
-# Setup Incus (first time only)
-./scripts/setup-incus.sh
+# Run bot
+docker run -d --name parkeerbot \
+  --env-file .env \
+  -v $(pwd)/config.yaml:/app/config.yaml:ro \
+  -v $(pwd)/sessions.json:/app/sessions.json \
+  ghcr.io/danieltromp/bezoekersparkeren:latest bot
 
-# Deploy container
-./scripts/deploy-incus.sh
+# Run CLI commands
+docker run --rm \
+  --env-file .env \
+  -v $(pwd)/config.yaml:/app/config.yaml:ro \
+  ghcr.io/danieltromp/bezoekersparkeren:latest list
 ```
 
-Manage the container:
+### Incus / LXD
 
 ```bash
-incus list                                    # Status
-incus exec parkeerbot -- journalctl -u parkeerbot -f  # Logs
-incus exec parkeerbot -- systemctl restart parkeerbot # Restart
+# Launch container from OCI image
+incus launch oci:ghcr.io/danieltromp/bezoekersparkeren:latest parkeerbot
+
+# Or with config mounted
+incus launch oci:ghcr.io/danieltromp/bezoekersparkeren:latest parkeerbot
+incus config device add parkeerbot config disk source=/path/to/config.yaml path=/app/config.yaml
+incus config set parkeerbot environment.PARKEER_EMAIL="your@email.com"
+# ... set other environment variables
+
+# Start bot
+incus exec parkeerbot -- bezoekersparkeren bot
 ```
 
-Configuration files are stored in `/opt/bezoekersparkeren/`.
+### Podman
 
-## CLI Usage
+```bash
+# Run bot
+podman run -d --name parkeerbot \
+  --env-file .env \
+  -v ./config.yaml:/app/config.yaml:ro \
+  -v ./sessions.json:/app/sessions.json \
+  ghcr.io/danieltromp/bezoekersparkeren:latest bot
+```
+
+## CLI Commands
 
 ```bash
 bezoekersparkeren list                        # List active sessions
@@ -57,9 +95,18 @@ bezoekersparkeren register --plate AB-123-CD --hours 4
 bezoekersparkeren register --plate AB-123-CD --all-day
 bezoekersparkeren stop <SESSION_ID>
 bezoekersparkeren balance
+bezoekersparkeren bot                         # Start Telegram bot
 ```
 
-Add `--visible` to see the browser window for debugging.
+## Development
+
+```bash
+# Build locally
+docker build -t bezoekersparkeren .
+
+# Or with compose
+docker compose build
+```
 
 ## License
 
