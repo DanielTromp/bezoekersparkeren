@@ -7,7 +7,9 @@ from bezoekersparkeren.client import ParkeerClient
 from bezoekersparkeren.config import Config
 import logging
 
-logger = logging.getLogger(__name__)
+import logging
+import io
+from bezoekersparkeren.license_plate_recognition import recognize_plate
 
 # Conversation states
 WAITING_FOR_PLATE = 1
@@ -304,6 +306,59 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text(
             "Gebruik /start om het menu te openen."
         )
+
+
+async def handle_photo_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler voor foto's (nummerplaatherkenning)."""
+    if not update.message.photo:
+        return
+
+    # Feedback geven
+    status_msg = await update.message.reply_text("Even kijken naar de nummerplaat... 🔍")
+    
+    try:
+        # Pak de grootste foto
+        photo = update.message.photo[-1]
+        file = await context.bot.get_file(photo.file_id)
+        
+        # Download naar memory
+        f = io.BytesIO()
+        await file.download_to_memory(out=f)
+        image_bytes = f.getvalue()
+        
+        # Roep vision API aan
+        if not _config:
+            await status_msg.edit_text("❌ Interne fout: config niet geladen.")
+            return
+
+        plate = await recognize_plate(image_bytes, _config)
+        
+        if plate:
+            # Succes! Vraag om bevestiging via inline keyboard
+            keyboard = [
+                [
+                    InlineKeyboardButton(f"✅ Start: {plate}", callback_data=f"register_{plate}"),
+                    InlineKeyboardButton("❌ Nee", callback_data="menu_back") # Of delete
+                ]
+            ]
+            
+            await status_msg.edit_text(
+                f"Nummerplaat gevonden: `{plate}`\n\nWil je een parkeersessie starten?",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode="Markdown"
+            )
+        else:
+            # Geen plaat gevonden
+            await status_msg.edit_text(
+                "Kon de nummerplaat niet goed lezen 😕\n\n"
+                "Voer deze handmatig in met `/register <kenteken>` of gebruik het menu.",
+                parse_mode="Markdown"
+            )
+            
+    except Exception as e:
+        logger.error(f"Error handling photo: {e}")
+        await status_msg.edit_text(f"❌ Er ging iets mis bij het verwerken van de foto: {str(e)}")
+
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):

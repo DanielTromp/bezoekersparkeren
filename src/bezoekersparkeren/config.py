@@ -37,6 +37,11 @@ class NotificationConfig(BaseModel):
     session_expiry_warning: int = 30  # minuten
 
 
+class OpenRouterConfig(BaseModel):
+    api_key: Optional[str] = None
+    model: str = "google/gemini-2.0-flash-001"
+
+
 
 
 from .models import Favorite, Zone, ScheduleRule
@@ -48,6 +53,7 @@ class Config(BaseSettings):
     defaults: DefaultSettings = DefaultSettings()
     logging: LoggingConfig = LoggingConfig()
     telegram: Optional[TelegramConfig] = None
+    openrouter: OpenRouterConfig = OpenRouterConfig()
     favorites: List[Favorite] = []
     zones: List[Zone] = []
     
@@ -89,6 +95,13 @@ class Config(BaseSettings):
                 )
             else:
                 config = cls()
+        
+        # Manual fallback for OpenRouter API key if not set via yaml/pydantic
+        if not config.openrouter.api_key:
+            api_key = os.environ.get("PARKEER_OPENROUTER_API_KEY") or os.environ.get("OPENROUTER_API_KEY")
+            if api_key:
+                config.openrouter.api_key = api_key
+
         
         # Add default zone if none exists
         if not config.zones:

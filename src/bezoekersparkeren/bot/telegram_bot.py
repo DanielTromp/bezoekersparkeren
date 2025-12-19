@@ -19,6 +19,7 @@ from bezoekersparkeren.bot.handlers import (
     handle_text_message,
     quick_register,
     quick_stop,
+    handle_photo_message,
 )
 from bezoekersparkeren.bot.middleware import authorized_only, AuthFilter
 
@@ -92,6 +93,14 @@ class ParkeerBot:
             MessageHandler(
                 filters.TEXT & ~filters.COMMAND & auth_filter,
                 handle_text_message
+            )
+        )
+        
+        # Photo handler
+        self.application.add_handler(
+            MessageHandler(
+                filters.PHOTO & auth_filter,
+                handle_photo_message
             )
         )
         
