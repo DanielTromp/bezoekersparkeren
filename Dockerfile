@@ -57,15 +57,15 @@ WORKDIR /app
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Install Playwright browsers as appuser
+# Set ownership and switch to non-root user
+RUN chown -R appuser:appuser /app
 USER appuser
+
+# Install Playwright browsers
 RUN playwright install chromium
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
-
-# Create directories for mounted files
-RUN mkdir -p /app/data
 
 ENTRYPOINT ["bezoekersparkeren"]
 CMD ["--help"]
