@@ -60,22 +60,6 @@ docker run --rm \
   ghcr.io/danieltromp/bezoekersparkeren:latest list
 ```
 
-### Incus / LXD
-
-```bash
-# Launch container from OCI image
-incus launch oci:ghcr.io/danieltromp/bezoekersparkeren:latest parkeerbot
-
-# Or with config mounted
-incus launch oci:ghcr.io/danieltromp/bezoekersparkeren:latest parkeerbot
-incus config device add parkeerbot config disk source=/path/to/config.yaml path=/app/config.yaml
-incus config set parkeerbot environment.PARKEER_EMAIL="your@email.com"
-# ... set other environment variables
-
-# Start bot
-incus exec parkeerbot -- bezoekersparkeren bot
-```
-
 ### Podman
 
 ```bash
@@ -85,6 +69,12 @@ podman run -d --name parkeerbot \
   -v ./config.yaml:/app/config.yaml:ro \
   -v ./sessions.json:/app/sessions.json \
   ghcr.io/danieltromp/bezoekersparkeren:latest bot
+
+# With systemd auto-start
+podman generate systemd --name parkeerbot --new --files
+sudo mv container-parkeerbot.service /etc/systemd/system/parkeerbot.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now parkeerbot
 ```
 
 ## CLI Commands
