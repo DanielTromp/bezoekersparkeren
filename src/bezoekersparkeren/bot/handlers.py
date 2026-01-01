@@ -11,6 +11,8 @@ import logging
 import io
 from bezoekersparkeren.license_plate_recognition import recognize_plate
 
+logger = logging.getLogger(__name__)
+
 # Conversation states
 WAITING_FOR_PLATE = 1
 WAITING_FOR_DURATION = 2
@@ -105,24 +107,94 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown"
         )
     
-    elif data.startswith("register_") and data != "register_custom":
-        # Direct registreren met favoriet kenteken
+    elif data.startswith("register_") and not any(x in data for x in ["register_custom", "register_now_", "register_multi_", "regmulti_"]) :
+        # Kies tussen direct of meerdaags
         plate = data.replace("register_", "")
+        keyboard = [
+            [
+                InlineKeyboardButton("🚀 Direct starten", callback_data=f"register_now_{plate}"),
+                InlineKeyboardButton("📅 Meerdaags", callback_data=f"register_multi_{plate}"),
+            ],
+            [InlineKeyboardButton("⬅️ Terug", callback_data="menu_register")]
+        ]
+        await _safe_edit_message(
+            query,
+            f"🚗 *Kenteken: {plate}*\n\nWat wil je doen?",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode="Markdown"
+        )
+
+    elif data.startswith("register_now_"):
+        # Direct registreren
+        plate = data.replace("register_now_", "")
         await _safe_edit_message(query, f"⏳ Bezig met aanmelden van {plate}...")
         
         try:
             client = await get_client()
-            session = await client.register_visitor(plate)
+            # Gebruik register_multiple_days met 1 dag voor consistentie
+            sessions = await client.register_multiple_days(plate, days=1)
+            session = sessions[0]
+            
+            end_str = ""
+            if session.end_time:
+                end_str = f"⏰ Gepland tot: {session.end_time.strftime('%H:%M')}, of meld je eerder af."
+            else:
+                end_str = "Vergeet niet om af te melden!"
+
             await _safe_edit_message(
                 query,
                 f"✅ *Kenteken aangemeld!*\n\n"
                 f"🚗 `{plate}`\n"
-                f"⏰ Gestart om: {session.start_time.strftime('%H:%M') if session.start_time else 'nu'}\n\n"
-                f"Vergeet niet om af te melden!",
+                f"{end_str}",
                 parse_mode="Markdown"
             )
         except Exception as e:
             logger.error(f"Error registering plate: {e}")
+            await _safe_edit_message(query, f"❌ Fout bij aanmelden: {str(e)}")
+
+    elif data.startswith("register_multi_"):
+        plate = data.replace("register_multi_", "")
+        # Toon keyboard voor aantal dagen
+        keyboard = []
+        row = []
+        for i in range(2, 8):
+            row.append(InlineKeyboardButton(f"{i} dgn", callback_data=f"regmulti_{i}_{plate}"))
+            if len(row) == 3:
+                keyboard.append(row)
+                row = []
+        keyboard.append([InlineKeyboardButton("⬅️ Terug", callback_data=f"register_{plate}")])
+        
+        await _safe_edit_message(
+            query,
+            f"📅 *Meerdaags parkeren: {plate}*\n\nHoeveel dagen wil je aanmelden?",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode="Markdown"
+        )
+
+    elif data.startswith("regmulti_"):
+        # regmulti_{days}_{plate}
+        parts = data.split("_")
+        days = int(parts[1])
+        plate = parts[2]
+        
+        await _safe_edit_message(query, f"⏳ Bezig met aanmelden van {plate} voor {days} dagen...")
+        
+        try:
+            client = await get_client()
+            sessions = await client.register_multiple_days(plate, days=days)
+            last_session = sessions[-1]
+            
+            until_date = last_session.end_time.strftime('%d-%m %H:%M') if last_session.end_time else "onbekend"
+            
+            await _safe_edit_message(
+                query,
+                f"✅ *Kenteken aangemeld voor {days} dagen!*\n\n"
+                f"🚗 `{plate}`\n"
+                f"⏰ Gepland tot: {until_date}, of meld je eerder af.",
+                parse_mode="Markdown"
+            )
+        except Exception as e:
+            logger.error(f"Error registering multi-day plate: {e}")
             await _safe_edit_message(query, f"❌ Fout bij aanmelden: {str(e)}")
     
     elif data == "register_custom":
@@ -151,13 +223,16 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
             
             keyboard = []
+            seen_plates = set()
             for session in sessions:
-                keyboard.append([
-                    InlineKeyboardButton(
-                        f"🛑 Stop: {session.plate}", 
-                        callback_data=f"stop_{session.plate}"
-                    )
-                ])
+                if session.plate not in seen_plates:
+                    keyboard.append([
+                        InlineKeyboardButton(
+                            f"🛑 Stop: {session.plate}", 
+                            callback_data=f"stop_{session.plate}"
+                        )
+                    ])
+                    seen_plates.add(session.plate)
             keyboard.append([
                 InlineKeyboardButton("⬅️ Terug", callback_data="menu_back")
             ])
@@ -174,20 +249,18 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     elif data.startswith("stop_"):
         plate = data.replace("stop_", "")
-        await _safe_edit_message(query, f"⏳ Bezig met afmelden van {plate}...")
+        await _safe_edit_message(query, f"⏳ Bezig met afmelden van alle sessies voor {plate}...")
         
         try:
             client = await get_client()
-            sessions = await client.get_active_sessions()
-            session = next((s for s in sessions if s.plate == plate), None)
+            count = await client.stop_all_sessions(plate)
             
-            if session:
-                await client.stop_session(session)
-                await _safe_edit_message(query, f"✅ Sessie voor `{plate}` is gestopt!", parse_mode="Markdown")
+            if count > 0:
+                await _safe_edit_message(query, f"✅ {count} sessie(s) voor `{plate}` zijn gestopt!", parse_mode="Markdown")
             else:
-                await _safe_edit_message(query, f"❌ Geen actieve sessie gevonden voor `{plate}`.")
+                await _safe_edit_message(query, f"❌ Geen actieve sessies gevonden voor `{plate}`.")
         except Exception as e:
-            logger.error(f"Error stopping session: {e}")
+            logger.error(f"Error stopping sessions: {e}")
             await _safe_edit_message(query, f"❌ Fout bij stoppen: {str(e)}")
     
     elif data == "menu_list":
@@ -291,11 +364,19 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         
         try:
             client = await get_client()
-            session = await client.register_visitor(plate)
+            sessions = await client.register_multiple_days(plate, days=1)
+            session = sessions[0]
+            
+            end_str = ""
+            if session.end_time:
+                end_str = f"⏰ Gepland tot: {session.end_time.strftime('%H:%M')}, of meld je eerder af."
+            else:
+                end_str = "Gebruik /start om terug te gaan naar het menu."
+
             await update.message.reply_text(
                 f"✅ *Kenteken aangemeld!*\n\n"
                 f"🚗 `{plate}`\n\n"
-                f"Gebruik /start om terug te gaan naar het menu.",
+                f"{end_str}",
                 parse_mode="Markdown"
             )
         except Exception as e:

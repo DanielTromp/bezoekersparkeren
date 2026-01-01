@@ -99,77 +99,20 @@ def register(ctx, plate, hours, minutes, until, all_day, date, days, start_time)
                         log_echo("Invalid date format. Use DD-MM-YYYY")
                         return
 
-            # Loop for multiple days
-            for i in range(days):
-                current_date = base_date + timedelta(days=i)
-                current_date_str = current_date.strftime("%d-%m-%Y")
-                
-                # Determine Zone (default to first one config)
-                zone = client.config.zones[0] if client.config.zones else None
-                
-                # Determine Start Time
-                s_time = start_time
-                if not s_time:
-                    if i == 0 and not date: 
-                        # Today, no specific date: start now
-                        s_time = datetime.now().strftime("%H:%M")
-                    else:
-                        # Future date: default to zone start time? or 00:00?
-                        # User constraint: "outside paid time... select first possible moment"
-                        # If we have a zone rule, use its start time.
-                        if zone:
-                            rule = TimeUtils.get_rule_for_day(zone, current_date)
-                            if rule:
-                                s_time = rule.start_time
-                            else:
-                                s_time = "00:00" # fallback
-                        else:
-                            s_time = "00:00"
-
-                # Determine End Time / Duration
-                e_time = until
-                # If all-day, calculate based on zone
-                if all_day and zone:
-                    e_time = TimeUtils.get_end_time_for_all_day(zone, current_date)
-                
-                # If neither until nor all-day, maybe hours/minutes logic applies
-                # We calculate 'until' explicitly to pass to client if possible, 
-                # or pass hours/minutes if we want client to handle it (but client handling is weak now)
-                # Better to calculate e_time here.
-                if not e_time and not (hours or minutes):
-                     # If nothing specified, maybe default duration? 
-                     pass
-
-                if hours or minutes:
-                     # Calculate e_time from s_time
-                     st_dt = datetime.strptime(s_time, "%H:%M")
-                     delta = timedelta(hours=hours or 0, minutes=minutes or 0)
-                     et_dt = st_dt + delta
-                     e_time = et_dt.strftime("%H:%M")
-
-                log_echo(f"Registering {plate} for {current_date_str} {s_time} - {e_time or '...'}")
-                
-                session = await client.register_visitor(
-                    plate=plate,
-                    start_date=current_date_str,
-                    start_time=s_time,
-                    end_date=current_date_str, # User said: "einddatum should always be the same as the startdatum"
-                    end_time=e_time,
-                    hours=hours,
-                    minutes=minutes
-                )
-                
-                # Generate ID for new session (consistent with client list parsing)
-                if not session.id and session.start_time:
-                     import hashlib
-                     id_base = f"{session.plate}-{session.start_time.isoformat()}"
-                     session.id = hashlib.md5(id_base.encode()).hexdigest()[:8]
-
-                # Update local state
-                from .utils.session_manager import SessionManager
-                SessionManager().add_session(session)
-                
-                log_echo(f"  Success: {session.plate} (ID: {session.id})")
+            # Use the new multi-day registration method
+            sessions = await client.register_multiple_days(
+                plate=plate,
+                days=days,
+                date=date,
+                start_time=start_time,
+                all_day=all_day
+            )
+            
+            from .utils.session_manager import SessionManager
+            manager = SessionManager()
+            for session in sessions:
+                manager.add_session(session)
+                log_echo(f"  Success: {session.plate} (ID: {session.id or '?'}) Gepland tot: {session.end_time.strftime('%d-%m %H:%M') if session.end_time else '?'}")
 
     asyncio.run(_register())
 

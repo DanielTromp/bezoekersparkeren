@@ -118,13 +118,52 @@ class ParkeerClient:
         """
         logger.info(f"Registering visitor: {plate}")
         
+        # Parse start/end times for the returned session object
+        parsed_start = None
+        if start_date and start_time:
+            try:
+                parsed_start = datetime.strptime(f"{start_date} {start_time}", "%d-%m-%Y %H:%M")
+            except ValueError:
+                pass
+        if not parsed_start:
+            parsed_start = datetime.now()
+
+        parsed_end = None
+        if end_date and end_time:
+            try:
+                parsed_end = datetime.strptime(f"{end_date} {end_time}", "%d-%m-%Y %H:%M")
+            except ValueError:
+                pass
+        
         try:
             # Navigate directly to the new visitor page to avoid selector issues on dashboard
             target_url = f"https://bezoek.parkeer.nl/{self.config.municipality}/app/park/new"
             logger.info(f"Navigating directly to {target_url}")
             await self.page.goto(target_url)
-            await self.page.wait_for_load_state('networkidle')
-            
+            # Check for "Resume previous session" dialog which appears sometimes on Almere portal
+            try:
+                # Wait a bit for the page to decide if it shows a dialog
+                await asyncio.sleep(1)
+                
+                # Check for buttons or text suggesting a resume prompt
+                # Use query_selector with multiple possibilities
+                resume_btn = await self.page.query_selector(
+                    'button:has-text("Start een nieuwe"), '
+                    'a:has-text("Start een nieuwe"), '
+                    'button:has-text("Hervatten vorige"), '
+                    'a:has-text("Hervatten vorige")'
+                )
+                
+                if resume_btn:
+                    logger.info("Handling 'Resume/Vorige parkeeractie' prompt...")
+                    # Always click 'Start een nieuwe' if it exists, otherwise maybe we are elsewhere
+                    start_new_btn = await self.page.query_selector('text="Start een nieuwe"')
+                    if start_new_btn:
+                        await start_new_btn.click()
+                        await self.page.wait_for_load_state('networkidle')
+            except Exception as e:
+                logger.debug(f"Resume dialog check failed (ignoring): {e}")
+
             # Check if input is already visible
             logger.info("Checking if registration form is already open...")
             is_form_open = False
@@ -252,7 +291,18 @@ class ParkeerClient:
             # ... rest of success handling
             await self.page.wait_for_load_state('networkidle')
             
-            return ParkingSession(plate=plate, active=True, start_time=datetime.now())
+            # Generate ID consistent with list parsing
+            import hashlib
+            id_base = f"{plate}-{parsed_start.isoformat()}"
+            session_id = hashlib.md5(id_base.encode()).hexdigest()[:8]
+
+            return ParkingSession(
+                id=session_id,
+                plate=plate, 
+                active=True, 
+                start_time=parsed_start,
+                end_time=parsed_end
+            )
             
         except Exception as e:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -270,6 +320,63 @@ class ParkeerClient:
             except Exception:
                 pass
             raise e
+
+    async def register_multiple_days(self, plate: str, days: int, date: Optional[str] = None, start_time: Optional[str] = None, all_day: bool = True) -> List[ParkingSession]:
+        """Register a visitor for multiple consecutive days."""
+        from .utils.time_utils import TimeUtils
+        
+        sessions = []
+        base_date = datetime.now()
+        if date:
+            if date.lower() == 'tomorrow':
+                base_date = base_date + timedelta(days=1)
+            else:
+                try:
+                    base_date = datetime.strptime(date, "%d-%m-%Y")
+                except ValueError:
+                    # If date is already in some other format or just today?
+                    pass
+
+        for i in range(days):
+            current_date = base_date + timedelta(days=i)
+            current_date_str = current_date.strftime("%d-%m-%Y")
+            
+            zone = self.config.zones[0] if self.config.zones else None
+            
+            # Determine Start Time
+            s_time = start_time
+            if not s_time:
+                if i == 0 and not date: 
+                    # Today, starting now
+                    s_time = datetime.now().strftime("%H:%M")
+                else:
+                    # Future date, use zone start time
+                    if zone:
+                        rule = TimeUtils.get_rule_for_day(zone, current_date)
+                        s_time = rule.start_time if rule else "00:00"
+                    else:
+                        s_time = "00:00"
+
+            # Determine End Time
+            e_time = None
+            if all_day and zone:
+                e_time = TimeUtils.get_end_time_for_all_day(zone, current_date)
+            
+            session = await self.register_visitor(
+                plate=plate,
+                start_date=current_date_str,
+                start_time=s_time,
+                end_date=current_date_str,
+                end_time=e_time
+            )
+            sessions.append(session)
+            logger.info(f"Registered day {i+1}/{days} for {plate}: {session.start_time}")
+            
+            # Small delay between registration actions to avoid portal glitches
+            if i < days - 1:
+                await asyncio.sleep(2)
+            
+        return sessions
 
     async def stop_session(self, session: ParkingSession) -> bool:
         """Stop a parking session for a given session object"""
@@ -322,10 +429,39 @@ class ParkeerClient:
                     except Exception:
                         logger.warning("No confirmation dialog appeared or could not be clicked automatically.")
                     
+                    # Wait for session to actually disappear from the DOM or for page change
+                    await self.page.wait_for_load_state('networkidle')
+                    await asyncio.sleep(1) 
                     return True
         
         logger.warning(f"Could not find session {session.id} in DOM to stop.")
         return False
+
+    async def stop_all_sessions(self, plate: str) -> int:
+        """Stop all active parking sessions for a specific license plate."""
+        count = 0
+        logger.info(f"Stopping all sessions for plate: {plate}")
+        
+        while True:
+            # Re-fetch sessions on every iteration because the page state changes
+            sessions = await self.get_active_sessions()
+            matching = [s for s in sessions if s.plate == plate]
+            
+            if not matching:
+                logger.info(f"No more sessions found for {plate}")
+                break
+            
+            session_to_stop = matching[0]
+            logger.info(f"Stopping session {count + 1} for {plate} (ID: {session_to_stop.id})")
+            
+            if await self.stop_session(session_to_stop):
+                count += 1
+            else:
+                # If we couldn't stop the session (e.g. button missing), avoid infinite loop
+                logger.warning(f"Failed to stop session {session_to_stop.id}, aborting loop.")
+                break
+                
+        return count
 
     async def _ensure_dashboard(self):
         """Ensure we are on the dashboard/active sessions page"""
