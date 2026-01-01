@@ -270,19 +270,40 @@ class ParkeerClient:
                 await self.page.fill('input#end_time', final_end_time)
                 await self.page.evaluate("document.getElementById('end_time').dispatchEvent(new Event('change'))")
             
+            # Trigger update by blurring inputs and dispatching events
+            logger.info("Triggering update events on inputs...")
+            for input_id in ['start_date', 'start_time', 'end_date', 'end_time']:
+                try:
+                    await self.page.evaluate(f"""() => {{
+                        const el = document.getElementById('{input_id}');
+                        if (el) {{
+                            el.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                            el.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                            el.dispatchEvent(new Event('blur', {{ bubbles: true }}));
+                        }}
+                    }}""")
+                except Exception:
+                    pass
+
             # Force update by clicking outside (blur inputs) to enable the button
-            # User suggested clicking "Parkeerkosten"
-            logger.info("Triggering update by clicking 'Parkeerkosten' to blur inputs...")
+            logger.info("Triggering update by clicking 'Parkeerkosten' or safe area...")
             try:
+                # Attempt to click "Parkeerkosten" to trigger UI update
                 await self.page.click('text="Parkeerkosten"', timeout=2000)
             except Exception:
-                # Fallback if text not found, click body or safe area?
-                # But user said Parkeerkosten exists.
-                logger.warning("Could not click 'Parkeerkosten', attempting generic click on body to blur.")
-                await self.page.click('body', Force=True)
+                # Fallback: click a safe background area if "Parkeerkosten" isn't clickable
+                logger.warning("Could not click 'Parkeerkosten', clicking body to blur.")
+                await self.page.mouse.click(10, 10) 
 
-            # Wait for price calculation/validation to update UI
-            await asyncio.sleep(0.5)
+            # Wait for the button to become enabled
+            logger.info("Waiting for 'Parkeeractie starten' button to be enabled...")
+            try:
+                await self.page.wait_for_function(
+                    "() => !document.querySelector('button.confirmAction').disabled",
+                    timeout=5000
+                )
+            except Exception as e:
+                logger.warning(f"Button did not become enabled automatically: {e}")
 
             # Start parking action (Confirm)
             logger.info("Clicking 'Parkeeractie starten' (Confirm)...")
