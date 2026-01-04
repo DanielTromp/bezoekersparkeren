@@ -1,6 +1,6 @@
 # Bezoekersparkeren
 
-Telegram bot for automated visitor parking registration on bezoek.parkeer.nl (Almere).
+Telegram bot for automated visitor parking registration on bezoek.parkeer.nl.
 
 ## Container Image
 
