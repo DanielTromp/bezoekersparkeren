@@ -140,6 +140,10 @@ class ParkeerClient:
             target_url = f"https://bezoek.parkeer.nl/{self.config.municipality}/app/park/new"
             logger.info(f"Navigating directly to {target_url}")
             await self.page.goto(target_url)
+            # Check if we got redirected to login page
+            await self._ensure_logged_in()
+            if "/app/" not in self.page.url:
+                await self.page.goto(target_url)
             # Check for "Resume previous session" dialog which appears sometimes on Almere portal
             try:
                 # Wait a bit for the page to decide if it shows a dialog
@@ -484,11 +488,35 @@ class ParkeerClient:
                 
         return count
 
+    async def _is_logged_in(self) -> bool:
+        """Check if we are still logged in by examining the current URL and page."""
+        current_url = self.page.url
+        # If we're on the login page or start page, we're not logged in
+        if not current_url or "/login" in current_url:
+            return False
+        if "/app/" not in current_url:
+            # Could be on the start page or redirected away
+            return False
+        # Check for login form as a final check
+        login_form = await self.page.query_selector('input#username')
+        if login_form:
+            return False
+        return True
+
+    async def _ensure_logged_in(self):
+        """Re-login if the session has expired."""
+        if not await self._is_logged_in():
+            logger.warning("Session expired, re-authenticating...")
+            success = await self.login()
+            if not success:
+                raise Exception("Re-login failed after session expiry")
+            logger.info("Re-authentication successful")
+
     async def _ensure_dashboard(self):
         """Ensure we are on the dashboard/active sessions page"""
         dashboard_url = f"https://bezoek.parkeer.nl/{self.config.municipality}/app/park"
         current_url = self.page.url
-        
+
         should_navigate = False
         if not current_url:
             should_navigate = True
@@ -501,11 +529,17 @@ class ParkeerClient:
         elif dashboard_url not in current_url:
             # If we are completely elsewhere (start page, login, etc)
             should_navigate = True
-            
+
         if should_navigate:
             logger.info(f"Navigating to dashboard (Current: {current_url})")
             await self.page.goto(dashboard_url)
             await self.page.wait_for_load_state('networkidle')
+            # Check if we got redirected to login page
+            await self._ensure_logged_in()
+            if should_navigate and "/app/park" not in self.page.url:
+                # After re-login we might not be on the dashboard yet
+                await self.page.goto(dashboard_url)
+                await self.page.wait_for_load_state('networkidle')
 
     async def get_active_sessions(self) -> List[ParkingSession]:
         """Get list of active parking sessions"""
@@ -644,13 +678,19 @@ class ParkeerClient:
     async def get_balance(self) -> Balance:
         """Get current balance"""
         logger.info("Fetching balance")
-        
+
         # Explicitly navigate to the user page where balance is known to be visible
         user_page_url = f"https://bezoek.parkeer.nl/{self.config.municipality}/app/user"
         if self.page.url != user_page_url:
             logger.info(f"Navigating to {user_page_url}")
             await self.page.goto(user_page_url)
             await self.page.wait_for_load_state('networkidle')
+            # Check if we got redirected to login page
+            await self._ensure_logged_in()
+            if "/app/user" not in self.page.url:
+                # After re-login, navigate again
+                await self.page.goto(user_page_url)
+                await self.page.wait_for_load_state('networkidle')
         
         try:
             selector = 'input[name="balance"]'

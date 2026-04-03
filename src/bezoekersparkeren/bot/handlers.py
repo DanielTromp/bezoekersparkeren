@@ -29,8 +29,19 @@ def init_handlers(config: Config):
 
 
 async def get_client() -> ParkeerClient:
-    """Get or create ParkeerClient instance."""
+    """Get or create ParkeerClient instance, recreating if the browser has crashed."""
     global _client
+    if _client is not None:
+        # Verify the browser is still usable
+        try:
+            _ = _client.page.url  # Quick check if page is still accessible
+        except Exception:
+            logger.warning("Browser appears crashed, recreating client...")
+            try:
+                await _client.close()
+            except Exception:
+                pass
+            _client = None
     if _client is None:
         _client = ParkeerClient(_config)
         await _client._init_browser()
